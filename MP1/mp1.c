@@ -22,7 +22,7 @@ char proc_write_buffer[MAX_BUFSIZE];
 static struct proc_dir_entry *proc_dir;
 static struct proc_dir_entry *proc_file;
 static int numbytes_printed = 0;
-static int val = 0;
+static void* to_print=NULL;
 static unsigned long procfs_buffer_size = 0;
 
 
@@ -49,61 +49,57 @@ int write_to_proc_file(struct file* file, const char *buffer, unsigned long coun
     return procfs_buffer_size ;
 }
 
-
-int* val_to_print(void){
+/* put linked list implementation here. this method returns the 
+ pointer (a void to next element in the linked list, right now its 
+ just printing an integer */
+void* get_next_node(void){
+    static int val = 0;
     val++;
-    return &val;
+    if(val>=500)
+        return NULL;
+    else return &val;
 }
 
-
 /* ---- sequence operations on the proc file */
-/* called at start of sequence  return NULL for now */
 void * seq_start_op(struct seq_file * sf, loff_t * pos){
-
-    static int* iter_ptr = &val;
-    printk(KERN_ALERT "Inside start \n");
-    /* we have to stop for good */
-    if (iter_ptr==NULL){
-        printk(KERN_ALERT "Stopping the printing.\n");
-        return NULL;
-    } else {
-        *pos = 0;
-        return iter_ptr;
+    printk(KERN_ALERT "Inside start\n");
+    if(*pos==0){
+        printk(KERN_ALERT "Starting the sequence\n");
+        to_print = get_next_node();
+        (*pos)++;
+        printk(KERN_ALERT "Dequeued element %d\n",*(int*)pos);
     }
+    else printk(KERN_ALERT "Starting new page\n");
+    if (to_print) return to_print;
+    else return NULL;
 }
 
 void * seq_next_op(struct seq_file* sf, void * v, loff_t * pos){
     /* find out how many chars you printed,since this is always called after show */
     /* if more than kernel page size,call stop which will reinitialize*/
-    int * iter_ptr =NULL;
-    printk(KERN_ALERT "Inside next \n");
-    if (numbytes_printed >= MY_LIMIT){
-        *pos = 0;
-        printk(KERN_ALERT "Ran out of page size, reinitalizing\n");
-        return NULL;
-    }else{
-        ++(*pos);
-        iter_ptr = val_to_print();
-        /* must end printing */
-        if (iter_ptr==NULL)
-            return NULL;
-        else return iter_ptr;
-    }
+    printk(KERN_ALERT "Inside next\n");
+    to_print = get_next_node();
+    (*pos)++;
+    printk(KERN_ALERT "Dequeued element %d\n",*(int*)pos);
+    if(to_print) return to_print;
+    else return NULL;
 }
 
 void seq_stop_op(struct seq_file* sf, void *v){
-    if (v){
-        if(numbytes_printed>=4096)
-            printk(KERN_ALERT "Inside stop without v being null so page overflow\n");
-    }
     printk(KERN_ALERT "Inside stop\n");
+    if(v){
+        printk(KERN_ALERT "Kernel page overflow,calling start again\n");
+    }else {
+        printk(KERN_ALERT "Stopping for good\n");
+    }
 }
 
+/* This will take in a void poitner to a link list element 
+   and print the element, right now does it with an int */
 int seq_show_op(struct seq_file* sf, void * v){
     printk(KERN_ALERT "Inside show\n");
     numbytes_printed += sprintf(proc_write_buffer,"The value is %d\n",*(int*)v);
-    if (numbytes_printed <= MY_LIMIT)
-        seq_printf(sf,proc_write_buffer);
+    seq_printf(sf,proc_write_buffer);
     return 0;
 }
 /*---seq operations on the proc file---*/
@@ -163,7 +159,7 @@ int create_new_proc_dir(void){
 
 /* remove the proc file */
 void remove_proc_files(void){
-    //remove_proc_entry(proc_file_name,proc_dir);
+    remove_proc_entry(proc_file_name,proc_dir);
     remove_proc_entry(proc_dir_name,NULL);
     printk(KERN_INFO "Removed the proc file system entries");
 }
