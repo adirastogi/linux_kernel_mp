@@ -1,4 +1,9 @@
 *.o
 *.cmd
 *.o.cmd
+*.order
+*.symvers
 *.ko
+.tmp_versions/
+*.mod.c
+userapp

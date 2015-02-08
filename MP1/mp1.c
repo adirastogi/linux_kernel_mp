@@ -11,7 +11,6 @@
 #define proc_file_name "status"
 #define DEBUG 1
 #define MAX_BUFSIZE 1000
-#define MY_LIMIT 10000
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("gp31");
@@ -58,6 +57,14 @@ void* get_next_node(void){
     if(val>=500)
         return NULL;
     else return &val;
+}
+
+/* This function takes the pid written to the procfile by a user process
+   (contained in the buffer buffer of size bufsize) and gets the stats for
+   that process from timer and writes it to linked list */    
+void write_process_id_to_list(const char * buffer, size_t bufsize){
+    
+
 }
 
 /* ---- sequence operations on the proc file */
@@ -119,12 +126,26 @@ int open_proc_file(struct inode* inode, struct file* file){
     return seq_open(file,&seq_ops);
 }
 
+/* called when the user process writes to proc file */
+ssize_t user_write_proc_file(struct file *sf, const char  * buffer, size_t bytes, loff_t * pos){
+    if (bytes > MAX_BUFSIZE)
+        bytes = MAX_BUFSIZE-1;
+    /* copy from userspace buffer to local buffer*/
+    if(copy_from_user(proc_write_buffer,buffer,bytes))
+        return -EFAULT;
+    /* return the number of bytes writtern */
+    proc_write_buffer[bytes]='\0';
+    write_process_id_to_list(proc_write_buffer,bytes);
+    printk(KERN_ALERT "Wrote the value %s to the buffer\n",proc_write_buffer);
+    return bytes;
+}
+
 /* Define the file ops for the proc filesystem entry*/
 static const struct file_operations fops = {
     .owner = THIS_MODULE,
     .open = open_proc_file,
     .read = seq_read,
-    .write = NULL,
+    .write = user_write_proc_file,
     .llseek = seq_lseek,
     .release = seq_release
 };
@@ -132,7 +153,7 @@ static const struct file_operations fops = {
 /* create the proc file */
 int create_proc_file(void){
 
-    proc_file = proc_create(proc_file_name,644,proc_dir,&fops);
+    proc_file = proc_create(proc_file_name,0666,proc_dir,&fops);
     if(!proc_file){
         remove_proc_entry(proc_file_name,proc_dir);
         printk(KERN_ALERT "Failure to create proc file\n");
