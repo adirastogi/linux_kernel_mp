@@ -69,16 +69,6 @@ int write_to_proc_file(struct file* file, const char *buffer, unsigned long coun
     return procfs_buffer_size ;
 }
 
-/* put linked list implementation here. this method returns the 
- pointer (a void to next element in the linked list, right now its 
- just printing an integer */
-void* get_next_node(void){
-    static int val = 0;
-    val++;
-    if(val>500)
-        return NULL;
-    else return &val;
-}
 /* convert char buffer to int pid */
 unsigned int char_to_int(const char* buffer){
     char * p = buffer;
@@ -101,17 +91,6 @@ void write_process_id_to_list(const char * buffer, size_t bufsize){
 /* ---- sequence operations on the proc file */
 void * seq_start_op(struct seq_file * sf, loff_t * pos){
     printk(KERN_ALERT "Inside start\n");
-    /*
-    if(*pos==0){
-        printk(KERN_ALERT "Starting the sequence\n");
-        to_print = get_next_node();
-        (*pos)++;
-        printk(KERN_ALERT "Dequeued element %d\n",*(int*)pos);
-    }
-    else printk(KERN_ALERT "Starting new page\n");
-    if (to_print) return to_print;
-    else return NULL;
-    */
     if(*pos==0){    
         /* First call */
         ++(*pos);
@@ -134,14 +113,6 @@ void * seq_next_op(struct seq_file* sf, void * v, loff_t * pos){
     /* find out how many chars you printed,since this is always called after show */
     /* if more than kernel page size,call stop which will reinitialize*/
     printk(KERN_ALERT "Inside next\n");
-    
-    /*
-    to_print = get_next_node();
-    (*pos)++;
-    printk(KERN_ALERT "Dequeued element %d\n",*(int*)pos);
-    if(to_print) return to_print;
-    else return NULL;
-    */
     struct list_head *ptr = (struct list_head *) v;
     struct process_info *temp = list_entry(ptr->next, struct process_info, list);
     if (temp == &process_info_list){
@@ -168,11 +139,6 @@ void seq_stop_op(struct seq_file* sf, void *v){
    and print the element, right now does it with an int */
 int seq_show_op(struct seq_file* sf, void * v){
     printk(KERN_ALERT "Inside show\n");
-    
-    /*
-    numbytes_printed += sprintf(proc_write_buffer,"The value is %d\n",*(int*)v);
-    seq_printf(sf,proc_write_buffer);
-    */
     
     struct list_head *ptr = (struct list_head *) v;
     struct process_info *temp = list_entry(ptr, struct process_info, list);
@@ -293,9 +259,7 @@ void __exit mp1_exit(void)
 #endif
     // Insert your code here ...
     remove_proc_files();
-    
     remove_linked_list();
-
 
     printk(KERN_ALERT "MP1 MODULE UNLOADED\n");
 }
