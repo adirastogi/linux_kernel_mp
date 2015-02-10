@@ -26,7 +26,8 @@ char proc_write_buffer[MAX_BUFSIZE];
 static struct proc_dir_entry *proc_dir;
 static struct proc_dir_entry *proc_file;
 static int numbytes_printed = 0;
-static void* to_print=NULL;
+static void* to_print_after_page=NULL;
+static int finish_printing = 0;
 static unsigned long procfs_buffer_size = 0;
 
 struct process_info {
@@ -78,13 +79,23 @@ void* get_next_node(void){
         return NULL;
     else return &val;
 }
-
+/* convert char buffer to int pid */
+unsigned int char_to_int(const char* buffer){
+    char * p = buffer;
+    unsigned int val = 0;
+    while(*p!='\n') {
+        val = 10*val + ( *p -'0');
+        p++;
+        printk(KERN_ALERT "Value is %d\n",val);
+    }
+    return val;
+}
 /* This function takes the pid written to the procfile by a user process
    (contained in the buffer buffer of size bufsize) and gets the stats for
    that process from timer and writes it to linked list */    
 void write_process_id_to_list(const char * buffer, size_t bufsize){
-    
-
+    unsigned int pid= char_to_int(buffer);
+    add_node_to_list(pid,0);
 }
 
 /* ---- sequence operations on the proc file */
@@ -101,8 +112,22 @@ void * seq_start_op(struct seq_file * sf, loff_t * pos){
     if (to_print) return to_print;
     else return NULL;
     */
+    if(*pos==0){    
+        /* First call */
+        ++(*pos);
+        printk(KERN_ALERT "Beginning list\n");
+        return process_info_list.list.next; //always the starting node of the list
+    }else if(*(pos)>0 && !finish_printing){
+        /* New page of output */
+        printk(KERN_ALERT "Restarting new page\n");
+        return to_print_after_page; 
+    }else {
+        printk(KERN_ALERT "Exiting from start\n");
+        to_print_after_page = NULL;
+        finish_printing = 0;
+        return NULL;
+    }
     
-    return &process_info_list.list.next; //always the starting node of the list
 }
 
 void * seq_next_op(struct seq_file* sf, void * v, loff_t * pos){
@@ -117,24 +142,25 @@ void * seq_next_op(struct seq_file* sf, void * v, loff_t * pos){
     if(to_print) return to_print;
     else return NULL;
     */
-    
-    return NULL;
-
     struct list_head *ptr = (struct list_head *) v;
-    struct process_info *temp = list_entry(ptr, struct process_info, list);
-    if (temp == &process_info_list)
+    struct process_info *temp = list_entry(ptr->next, struct process_info, list);
+    if (temp == &process_info_list){
+        printk(KERN_ALERT "Going here\n");
         return NULL;
-    else {
-        return temp->list.next;
+    }else {
+        (*pos)++;
+        return &temp->list;
     }
 }
 
 void seq_stop_op(struct seq_file* sf, void *v){
     printk(KERN_ALERT "Inside stop\n");
     if(v){
-        printk(KERN_ALERT "Kernel page overflow,calling start again\n");
-    }else {
+        printk(KERN_ALERT "New page output \n");
+        to_print_after_page = v;
+    }else{
         printk(KERN_ALERT "Stopping for good\n");
+        finish_printing = 1;
     }
 }
 
@@ -181,7 +207,7 @@ ssize_t user_write_proc_file(struct file *sf, const char  * buffer, size_t bytes
     /* return the number of bytes writtern */
     proc_write_buffer[bytes]='\0';
     write_process_id_to_list(proc_write_buffer,bytes);
-    printk(KERN_ALERT "Wrote the value %s to the buffer\n",proc_write_buffer);
+    printk(KERN_ALERT "Wrote the value %s to the buffer, buffer size %d\n",proc_write_buffer,bytes);
     return bytes;
 }
 
@@ -252,7 +278,7 @@ int __init mp1_init(void)
     //Code below initializes the linked list for temp purpose
     INIT_LIST_HEAD(&process_info_list.list);
     unsigned int i=0;
-    for(i=0; i<5; ++i){
+    for(i=1; i<60000; ++i){
         add_node_to_list(i, i*10);
     }
     return 0;   

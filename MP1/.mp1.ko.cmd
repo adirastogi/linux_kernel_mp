@@ -1,1 +1,1 @@
-cmd_/home/aditya/mp1/MP1/mp1.ko := ld -r -m elf_x86_64 -T /usr/src/linux-headers-3.13.0-44-generic/scripts/module-common.lds --build-id  -o /home/aditya/mp1/MP1/mp1.ko /home/aditya/mp1/MP1/mp1.o /home/aditya/mp1/MP1/mp1.mod.o
+cmd_/home/dhruve/mp1/linux_kernel_mp/MP1/mp1.ko := ld -r -m elf_x86_64 -T /usr/src/linux-headers-3.13.0-44-generic/scripts/module-common.lds --build-id  -o /home/dhruve/mp1/linux_kernel_mp/MP1/mp1.ko /home/dhruve/mp1/linux_kernel_mp/MP1/mp1.o /home/dhruve/mp1/linux_kernel_mp/MP1/mp1.mod.o
