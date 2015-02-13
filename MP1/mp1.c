@@ -4,7 +4,9 @@
 #include <linux/kernel.h>
 #include <linux/proc_fs.h>
 #include <asm/uaccess.h>
+#include <linux/timer.h>
 #include <linux/seq_file.h>
+#include <linux/workqueue.h>
 #include "mp1_given.h"
 
 //---------header files for LinkedList
@@ -29,11 +31,18 @@ static int numbytes_printed = 0;
 static void* to_print_after_page=NULL;
 static int finish_printing = 0;
 static unsigned long procfs_buffer_size = 0;
+static struct timer_list proc_timer;
+static struct workqueue_struct * wque = NULL;
+
 
 struct process_info {
     struct list_head list; //This is kernel's structure for 2-way list
     unsigned int pid;
     unsigned int cpu_time;
+};
+
+struct proc_work_t  {
+    struct work_struct work_st;
 };
 
 struct process_info process_info_list; //Head of the list which stores info about all processes
@@ -229,7 +238,54 @@ void remove_linked_list(void){
         kfree(process_node);
     }
 }
+//iterate the list and update the timers
+void iterate_and_update_list(void){
 
+    printk("Iterating and updating the list\n");
+}
+//this is called when work is dequeued from the 
+//workqueue (bottom half)
+void workque_callback(struct work_struct * work){
+    iterate_and_update_list();        
+    kfree((void*)work);
+    return ;
+}
+    
+//function that is called as a callback when the timer expires
+//this is the top half of f execution 
+void timer_callback(unsigned long data){
+    int ret; 
+    //schedule the workqueue function
+    printk("Inside timer callback\n");
+    struct proc_work_t* work = (struct proc_work_t*) kmalloc(sizeof(struct proc_work_t),GFP_KERNEL);
+    if(work){
+        INIT_WORK((struct work_struct*)work,workque_callback);
+        if(wque) ret = queue_work(wque,(struct work_struct* )work);
+        printk("Scheduling new work\n");
+    }
+    //scheduled the new timer
+    ret = mod_timer(&proc_timer,(jiffies+ msecs_to_jiffies(5000)));
+    if (ret) printk("Error setting the timer\n");
+}
+//initilaize the timer
+void create_timer_and_queue(void){
+
+    int ret;
+    //initilaize the workqueue 
+    wque = create_workqueue("mp1_queue");  
+    if(!wque) printk("Error initilazing workqueue\n");
+    //initilaize the timer and set it to fire first time
+    setup_timer(&proc_timer,timer_callback,0);
+    ret = mod_timer(&proc_timer,(jiffies+ msecs_to_jiffies(5000)));
+    if (ret) printk("Error setting the timer\n");
+
+}
+
+void destroy_timer_and_queue(void){
+    del_timer(&proc_timer);
+    flush_workqueue(wque);
+    destroy_workqueue(wque);
+}
 // mp1_init - Called when module is loaded
 int __init mp1_init(void)
 {
@@ -247,6 +303,9 @@ int __init mp1_init(void)
     for(i=1; i<60000; ++i){
         add_node_to_list(i, i*10);
     }
+
+    //init a timer during initialize
+    create_timer_and_queue();
     return 0;   
 }
 
@@ -260,6 +319,7 @@ void __exit mp1_exit(void)
     // Insert your code here ...
     remove_proc_files();
     remove_linked_list();
+    destroy_timer_and_queue();
 
     printk(KERN_ALERT "MP1 MODULE UNLOADED\n");
 }

@@ -6,5 +6,7 @@
 *.ko
 .tmp_versions/
 *.mod.c
+*.ko.cmd
+*.mod.o.cmd
 userapp
 /MP1/
