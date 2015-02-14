@@ -8,6 +8,7 @@
 #include <linux/seq_file.h>
 #include <linux/workqueue.h>
 #include "mp1_given.h"
+#include <linux/mutex.h>
 
 //---------header files for LinkedList
 #include <linux/list.h>
@@ -18,6 +19,9 @@
 #define proc_file_name "status"
 #define DEBUG 1
 #define MAX_BUFSIZE 1000
+#define TICK 1000
+
+static DEFINE_MUTEX(list_lock);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("gp31");
@@ -52,7 +56,9 @@ void add_node_to_list(unsigned int process_id, unsigned int user_cpu_time){
     new_process_info->pid = process_id;
     new_process_info->cpu_time = user_cpu_time;
     INIT_LIST_HEAD(&new_process_info->list); //This step is important
+    mutex_lock(&list_lock);
     list_add_tail(&(new_process_info->list), &(process_info_list.list));
+    mutex_unlock(&list_lock);
 }
 
 
@@ -153,7 +159,10 @@ static const struct seq_operations seq_ops = {
 
 /* called when the proc file is opened */
 int open_proc_file(struct inode* inode, struct file* file){
-    return seq_open(file,&seq_ops);
+    mutex_lock(&list_lock);
+    int ret_code = seq_open(file,&seq_ops);
+    mutex_unlock(&list_lock);
+    return ret_code;
 }
 
 /* called when the user process writes to proc file */
@@ -226,17 +235,21 @@ void remove_linked_list(void){
 void iterate_and_update_list(void){
     struct process_info *process_node, *temp;
     printk(KERN_ALERT "Iterating and updating the list\n");
+    
+    mutex_lock(&list_lock);
     list_for_each_entry_safe(process_node, temp, &process_info_list.list, list){
-        printk("Updating the entry for process id %d\n", process_node->pid);
+        printk(KERN_ALERT "Updating the entry for process id %d\n", process_node->pid);
         unsigned long cpu_use;
         if(get_cpu_use(process_node->pid,&cpu_use)==-1){
             //delete the entry from the list if pid is stale
             list_del(&process_node->list);
             kfree(process_node);
         }else{
+            printk(KERN_ALERT "CPU use time : => %d\n", cpu_use);
             process_node->cpu_time=cpu_use;
         }
     }
+    mutex_unlock(&list_lock);
 }
 //this is called when work is dequeued from the 
 //workqueue (bottom half)
@@ -259,7 +272,7 @@ void timer_callback(unsigned long data){
         printk(KERN_ALERT "Scheduling new work\n");
     }
     //scheduled the new timer
-    ret = mod_timer(&proc_timer,(jiffies+ msecs_to_jiffies(5000)));
+    ret = mod_timer(&proc_timer,(jiffies+ msecs_to_jiffies(TICK)));
     if (ret) printk(KERN_ALERT "Error setting the timer\n");
 }
 //initilaize the timer
@@ -271,7 +284,7 @@ void create_timer_and_queue(void){
     if(!wque) printk(KERN_ALERT "Error initilazing workqueue\n");
     //initilaize the timer and set it to fire first time
     setup_timer(&proc_timer,timer_callback,0);
-    ret = mod_timer(&proc_timer,(jiffies+ msecs_to_jiffies(5000)));
+    ret = mod_timer(&proc_timer,(jiffies+ msecs_to_jiffies(TICK)));
     if (ret) printk(KERN_ALERT "Error setting the timer\n");
 
 }
