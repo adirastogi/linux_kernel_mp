@@ -9,11 +9,8 @@
 #include <linux/workqueue.h>
 #include "mp1_given.h"
 #include <linux/mutex.h>
-
-//---------header files for LinkedList
 #include <linux/list.h>
 #include <linux/slab.h>
-//---------header files for LinkedList
 
 #define proc_dir_name "mp1"
 #define proc_file_name "status"
@@ -21,13 +18,11 @@
 #define MAX_BUFSIZE 1000
 #define TICK 1000
 
-static DEFINE_MUTEX(list_lock);
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("gp31");
 MODULE_DESCRIPTION("CS-423 MP1");
 
-char proc_write_buffer[MAX_BUFSIZE];
+static DEFINE_MUTEX(list_lock);
 
 static struct proc_dir_entry *proc_dir;
 static struct proc_dir_entry *proc_file;
@@ -37,6 +32,9 @@ static int finish_printing = 0;
 static struct timer_list proc_timer;
 static struct workqueue_struct * wque = NULL;
 
+char proc_write_buffer[MAX_BUFSIZE];
+
+/*---------- structure definitiions and initializations ----------- */
 
 struct process_info {
     struct list_head list; //This is kernel's structure for 2-way list
@@ -48,9 +46,12 @@ struct proc_work_t  {
     struct work_struct work_st;
 };
 
-struct process_info process_info_list; //Head of the list which stores info about all processes
+//Head of the list which stores info about all processes
+struct process_info process_info_list; 
 
-void add_node_to_list(unsigned int process_id, unsigned int user_cpu_time){
+/*---------- START : functions for adding/removing/updating/traversing the kernel linkedlist --------- */
+
+void _add_node_to_list(unsigned int process_id, unsigned int user_cpu_time){
     struct process_info *new_process_info;
     new_process_info = kmalloc(sizeof(*new_process_info), GFP_KERNEL);
     new_process_info->pid = process_id;
@@ -61,6 +62,36 @@ void add_node_to_list(unsigned int process_id, unsigned int user_cpu_time){
     mutex_unlock(&list_lock);
 }
 
+//iterate the list and update the timers
+void _iterate_and_update_list(void){
+    struct process_info *process_node, *temp;
+    printk(KERN_ALERT "Iterating and updating the list\n");
+    
+    mutex_lock(&list_lock);
+    list_for_each_entry_safe(process_node, temp, &process_info_list.list, list){
+        printk(KERN_ALERT "Updating the entry for process id %d\n", process_node->pid);
+        unsigned long cpu_use;
+        if(get_cpu_use(process_node->pid,&cpu_use)==-1){
+            //delete the entry from the list if pid is stale
+            list_del(&process_node->list);
+            kfree(process_node);
+        }else{
+            printk(KERN_ALERT "CPU use time : => %d\n", cpu_use);
+            process_node->cpu_time=cpu_use;
+        }
+    }
+    mutex_unlock(&list_lock);
+}
+
+void remove_linked_list(void){
+    struct process_info *process_node, *temp;
+    list_for_each_entry_safe(process_node, temp, &process_info_list.list, list){
+        list_del(&process_node->list);
+        kfree(process_node);
+    }
+}
+
+/*---------- END : functions for adding/removing/updating/traversing the kernel linkedlist --------- */
 
 /* convert char buffer to int pid */
 unsigned int char_to_int(const char* buffer){
@@ -70,15 +101,17 @@ unsigned int char_to_int(const char* buffer){
         val = 10*val + ( *p++ -'0');
     return val;
 }
+
 /* This function takes the pid written to the procfile by a user process
    (contained in the buffer buffer of size bufsize) and gets the stats for
    that process from timer and writes it to linked list */    
 void write_process_id_to_list(const char * buffer, size_t bufsize){
     unsigned int pid= char_to_int(buffer);
-    add_node_to_list(pid,0);
+    _add_node_to_list(pid,0);
 }
 
-/* ---- sequence operations on the proc file */
+/*--------- START : sequence operations on the proc file -------------- */
+
 void * seq_start_op(struct seq_file * sf, loff_t * pos){
     printk(KERN_ALERT "Inside start\n");
     if(*pos==0){    
@@ -145,7 +178,7 @@ int seq_show_op(struct seq_file* sf, void * v){
     seq_printf(sf, proc_write_buffer);
     return 0;
 }
-/*---seq operations on the proc file---*/
+/*----------- END : seq operations on the proc file --------------*/
 
 
 /* struct defining the sequence operations */
@@ -158,7 +191,7 @@ static const struct seq_operations seq_ops = {
 
 
 /* called when the proc file is opened */
-int open_proc_file(struct inode* inode, struct file* file){
+int _open_proc_file(struct inode* inode, struct file* file){
     mutex_lock(&list_lock);
     int ret_code = seq_open(file,&seq_ops);
     mutex_unlock(&list_lock);
@@ -182,14 +215,14 @@ ssize_t user_write_proc_file(struct file *sf, const char  * buffer, size_t bytes
 /* Define the file ops for the proc filesystem entry*/
 static const struct file_operations fops = {
     .owner = THIS_MODULE,
-    .open = open_proc_file,
+    .open = _open_proc_file,
     .read = seq_read,
     .write = user_write_proc_file,
     .llseek = seq_lseek,
     .release = seq_release
 };
 
-/* create the proc file */
+/*----- create the proc file -----*/
 int create_proc_file(void){
 
     proc_file = proc_create(proc_file_name,0666,proc_dir,&fops);
@@ -203,7 +236,7 @@ int create_proc_file(void){
     }
 }
 
-/* create the proc directory */
+/*----- create the proc directory -----*/
 int create_new_proc_dir(void){
 
     proc_dir = proc_mkdir(proc_dir_name,NULL);
@@ -217,44 +250,18 @@ int create_new_proc_dir(void){
     }
 }
 
-/* remove the proc file */
+/*----- removes the proc file and its directory -----*/
 void remove_proc_files(void){
     remove_proc_entry(proc_file_name,proc_dir);
     remove_proc_entry(proc_dir_name,NULL);
     printk(KERN_ALERT "Removed the proc file system entries");
 }
 
-void remove_linked_list(void){
-    struct process_info *process_node, *temp;
-    list_for_each_entry_safe(process_node, temp, &process_info_list.list, list){
-        list_del(&process_node->list);
-        kfree(process_node);
-    }
-}
-//iterate the list and update the timers
-void iterate_and_update_list(void){
-    struct process_info *process_node, *temp;
-    printk(KERN_ALERT "Iterating and updating the list\n");
-    
-    mutex_lock(&list_lock);
-    list_for_each_entry_safe(process_node, temp, &process_info_list.list, list){
-        printk(KERN_ALERT "Updating the entry for process id %d\n", process_node->pid);
-        unsigned long cpu_use;
-        if(get_cpu_use(process_node->pid,&cpu_use)==-1){
-            //delete the entry from the list if pid is stale
-            list_del(&process_node->list);
-            kfree(process_node);
-        }else{
-            printk(KERN_ALERT "CPU use time : => %d\n", cpu_use);
-            process_node->cpu_time=cpu_use;
-        }
-    }
-    mutex_unlock(&list_lock);
-}
+/*----- START: Functions related to Timers, Workqueues  -----*/
 //this is called when work is dequeued from the 
 //workqueue (bottom half)
 void workque_callback(struct work_struct * work){
-    iterate_and_update_list();        
+    _iterate_and_update_list();        
     kfree((void*)work);
     return ;
 }
@@ -294,6 +301,9 @@ void destroy_timer_and_queue(void){
     flush_workqueue(wque);
     destroy_workqueue(wque);
 }
+/*----- END : Functions related to Timers, Workqueues  -----*/
+
+
 // mp1_init - Called when module is loaded
 int __init mp1_init(void)
 {
@@ -306,13 +316,6 @@ int __init mp1_init(void)
     printk(KERN_ALERT "MP1 MODULE LOADED\n");
     
     INIT_LIST_HEAD(&process_info_list.list);
-    /*
-    unsigned int i=0;
-    for(i=1; i<600; ++i){
-        add_node_to_list(i, i*10);
-    }
-    */
-
     //init a timer during initialize
     create_timer_and_queue();
     return 0;   
