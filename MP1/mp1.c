@@ -51,7 +51,7 @@ struct process_info process_info_list;
 
 /*---------- START : functions for adding/removing/updating/traversing the kernel linkedlist --------- */
 
-void _add_node_to_list(unsigned int process_id, unsigned int user_cpu_time){
+void add_node_to_list(unsigned int process_id, unsigned int user_cpu_time){
     struct process_info *new_process_info;
     new_process_info = kmalloc(sizeof(*new_process_info), GFP_KERNEL);
     new_process_info->pid = process_id;
@@ -63,7 +63,7 @@ void _add_node_to_list(unsigned int process_id, unsigned int user_cpu_time){
 }
 
 //iterate the list and update the timers
-void _iterate_and_update_list(void){
+void iterate_and_update_list(void){
     struct process_info *process_node, *temp;
     printk(KERN_ALERT "Iterating and updating the list\n");
     
@@ -83,7 +83,7 @@ void _iterate_and_update_list(void){
     mutex_unlock(&list_lock);
 }
 
-void remove_linked_list(void){
+void _remove_linked_list(void){
     struct process_info *process_node, *temp;
     list_for_each_entry_safe(process_node, temp, &process_info_list.list, list){
         list_del(&process_node->list);
@@ -94,7 +94,7 @@ void remove_linked_list(void){
 /*---------- END : functions for adding/removing/updating/traversing the kernel linkedlist --------- */
 
 /* convert char buffer to int pid */
-unsigned int char_to_int(const char* buffer){
+unsigned int _char_to_int(const char* buffer){
     char * p = buffer;
     unsigned int val = 0;
     while('0'<= *p && *p <='9' ) 
@@ -105,14 +105,14 @@ unsigned int char_to_int(const char* buffer){
 /* This function takes the pid written to the procfile by a user process
    (contained in the buffer buffer of size bufsize) and gets the stats for
    that process from timer and writes it to linked list */    
-void write_process_id_to_list(const char * buffer, size_t bufsize){
-    unsigned int pid= char_to_int(buffer);
-    _add_node_to_list(pid,0);
+void _write_process_id_to_list(const char * buffer, size_t bufsize){
+    unsigned int pid= _char_to_int(buffer);
+    add_node_to_list(pid,0);
 }
 
 /*--------- START : sequence operations on the proc file -------------- */
 
-void * seq_start_op(struct seq_file * sf, loff_t * pos){
+void * _seq_start_op(struct seq_file * sf, loff_t * pos){
     printk(KERN_ALERT "Inside start\n");
     if(*pos==0){    
         /* First call */
@@ -133,7 +133,7 @@ void * seq_start_op(struct seq_file * sf, loff_t * pos){
     
 }
 
-void * seq_next_op(struct seq_file* sf, void * v, loff_t * pos){
+void * _seq_next_op(struct seq_file* sf, void * v, loff_t * pos){
     /* find out how many chars you printed,since this is always called after show */
     /* if more than kernel page size,call stop which will reinitialize*/
     printk(KERN_ALERT "Inside next\n");
@@ -148,7 +148,7 @@ void * seq_next_op(struct seq_file* sf, void * v, loff_t * pos){
     }
 }
 
-void seq_stop_op(struct seq_file* sf, void *v){
+void _seq_stop_op(struct seq_file* sf, void *v){
     printk(KERN_ALERT "Inside stop\n");
     if(v){
         //called on page overflow.
@@ -169,7 +169,7 @@ void seq_stop_op(struct seq_file* sf, void *v){
 
 /* This will take in a void poitner to a link list element 
    and print the element, right now does it with an int */
-int seq_show_op(struct seq_file* sf, void * v){
+int _seq_show_op(struct seq_file* sf, void * v){
     printk(KERN_ALERT "Inside show\n");
     
     struct list_head *ptr = (struct list_head *) v;
@@ -183,15 +183,15 @@ int seq_show_op(struct seq_file* sf, void * v){
 
 /* struct defining the sequence operations */
 static const struct seq_operations seq_ops = {
-    .start = seq_start_op,
-    .next = seq_next_op,
-    .stop = seq_stop_op,
-    .show = seq_show_op
+    .start = _seq_start_op,
+    .next = _seq_next_op,
+    .stop = _seq_stop_op,
+    .show = _seq_show_op
 };
 
 
 /* called when the proc file is opened */
-int _open_proc_file(struct inode* inode, struct file* file){
+int open_proc_file(struct inode* inode, struct file* file){
     mutex_lock(&list_lock);
     int ret_code = seq_open(file,&seq_ops);
     mutex_unlock(&list_lock);
@@ -199,7 +199,7 @@ int _open_proc_file(struct inode* inode, struct file* file){
 }
 
 /* called when the user process writes to proc file */
-ssize_t user_write_proc_file(struct file *sf, const char  * buffer, size_t bytes, loff_t * pos){
+ssize_t _user_write_proc_file(struct file *sf, const char  * buffer, size_t bytes, loff_t * pos){
     if (bytes > MAX_BUFSIZE)
         bytes = MAX_BUFSIZE-1;
     /* copy from userspace buffer to local buffer*/
@@ -207,7 +207,7 @@ ssize_t user_write_proc_file(struct file *sf, const char  * buffer, size_t bytes
         return -EFAULT;
     /* return the number of bytes writtern */
     proc_write_buffer[bytes]='\0';
-    write_process_id_to_list(proc_write_buffer,bytes);
+    _write_process_id_to_list(proc_write_buffer,bytes);
     printk(KERN_ALERT "Wrote the value %s to the buffer, buffer size %d\n",proc_write_buffer,bytes);
     return bytes;
 }
@@ -215,15 +215,15 @@ ssize_t user_write_proc_file(struct file *sf, const char  * buffer, size_t bytes
 /* Define the file ops for the proc filesystem entry*/
 static const struct file_operations fops = {
     .owner = THIS_MODULE,
-    .open = _open_proc_file,
+    .open = open_proc_file,
     .read = seq_read,
-    .write = user_write_proc_file,
+    .write = _user_write_proc_file,
     .llseek = seq_lseek,
     .release = seq_release
 };
 
 /*----- create the proc file -----*/
-int create_proc_file(void){
+int _create_proc_file(void){
 
     proc_file = proc_create(proc_file_name,0666,proc_dir,&fops);
     if(!proc_file){
@@ -237,7 +237,7 @@ int create_proc_file(void){
 }
 
 /*----- create the proc directory -----*/
-int create_new_proc_dir(void){
+int _create_new_proc_dir(void){
 
     proc_dir = proc_mkdir(proc_dir_name,NULL);
     if(!proc_dir){
@@ -251,7 +251,7 @@ int create_new_proc_dir(void){
 }
 
 /*----- removes the proc file and its directory -----*/
-void remove_proc_files(void){
+void _remove_proc_files(void){
     remove_proc_entry(proc_file_name,proc_dir);
     remove_proc_entry(proc_dir_name,NULL);
     printk(KERN_ALERT "Removed the proc file system entries");
@@ -260,21 +260,21 @@ void remove_proc_files(void){
 /*----- START: Functions related to Timers, Workqueues  -----*/
 //this is called when work is dequeued from the 
 //workqueue (bottom half)
-void workque_callback(struct work_struct * work){
-    _iterate_and_update_list();        
+void _workque_callback(struct work_struct * work){
+    iterate_and_update_list();        
     kfree((void*)work);
     return ;
 }
     
 //function that is called as a callback when the timer expires
 //this is the top half of f execution 
-void timer_callback(unsigned long data){
+void _timer_callback(unsigned long data){
     int ret; 
     //schedule the workqueue function
     printk(KERN_ALERT "Inside timer callback\n");
     struct proc_work_t* work = (struct proc_work_t*) kmalloc(sizeof(struct proc_work_t),GFP_KERNEL);
     if(work){
-        INIT_WORK((struct work_struct*)work,workque_callback);
+        INIT_WORK((struct work_struct*)work,_workque_callback);
         if(wque) ret = queue_work(wque,(struct work_struct* )work);
         printk(KERN_ALERT "Scheduling new work\n");
     }
@@ -283,20 +283,20 @@ void timer_callback(unsigned long data){
     if (ret) printk(KERN_ALERT "Error setting the timer\n");
 }
 //initilaize the timer
-void create_timer_and_queue(void){
+void _create_timer_and_queue(void){
 
     int ret;
     //initilaize the workqueue 
     wque = create_workqueue("mp1_queue");  
     if(!wque) printk(KERN_ALERT "Error initilazing workqueue\n");
     //initilaize the timer and set it to fire first time
-    setup_timer(&proc_timer,timer_callback,0);
+    setup_timer(&proc_timer,_timer_callback,0);
     ret = mod_timer(&proc_timer,(jiffies+ msecs_to_jiffies(TICK)));
     if (ret) printk(KERN_ALERT "Error setting the timer\n");
 
 }
 
-void destroy_timer_and_queue(void){
+void _destroy_timer_and_queue(void){
     del_timer(&proc_timer);
     flush_workqueue(wque);
     destroy_workqueue(wque);
@@ -310,14 +310,14 @@ int __init mp1_init(void)
 #ifdef DEBUG
     printk(KERN_ALERT "MP1 MODULE LOADING\n");
 #endif
-    if(!create_new_proc_dir() || !create_proc_file())
+    if(!_create_new_proc_dir() || !_create_proc_file())
         return -ENOMEM;
 
     printk(KERN_ALERT "MP1 MODULE LOADED\n");
     
     INIT_LIST_HEAD(&process_info_list.list);
     //init a timer during initialize
-    create_timer_and_queue();
+    _create_timer_and_queue();
     return 0;   
 }
 
@@ -329,9 +329,9 @@ void __exit mp1_exit(void)
     printk(KERN_ALERT "MP1 MODULE UNLOADING\n");
 #endif
     // Insert your code here ...
-    remove_proc_files();
-    remove_linked_list();
-    destroy_timer_and_queue();
+    _remove_proc_files();
+    _remove_linked_list();
+    _destroy_timer_and_queue();
 
     printk(KERN_ALERT "MP1 MODULE UNLOADED\n");
 }
